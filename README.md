@@ -1,6 +1,6 @@
-# Ultimate Agentic Data Scientist Pro
+# Apex DS | Enterprise Analytics Studio
 
-Local-first AI data science platform for Windows/Linux. No cloud, no paid APIs.
+Local-first enterprise analytics platform for AutoML, deep learning, RAG, SQL, forecasting, clustering, XAI, multi-agent orchestration, and reporting. Runs offline. No cloud. No paid APIs.
 
 ## Features
 
