@@ -9,7 +9,7 @@
 
 ### 2. Create Virtual Environment
 ```cmd
-cd C:\Users\SAKSHAM SINGRIWAL\Desktop\agentic_ds
+cd C:\Users\SAKSHAM SINGRIWAL\Desktop\apex-ds-enterprise-analytics
 python -m venv .venv
 .venv\Scripts\activate
 ```
@@ -48,7 +48,7 @@ pip install -r requirements.txt
 streamlit run app.py --server.headless true
 ```
 
-> **GPU is not required.** All heavy libraries (`torch==2.2.0`, `autogluon==1.1.1`, `faiss-cpu==1.7.4`) have CPU-compatible wheelhouse entries. CPU-only training will be slower but functional.
+> **GPU is not required.** All heavy libraries (`torch==2.2.0`, `autogluon>=1.5.0`, `faiss-cpu==1.7.4`) have CPU-compatible wheelhouse entries. CPU-only training will be slower but functional.
 
 ---
 
@@ -61,7 +61,7 @@ sudo apt update && sudo apt install python3.12 python3.12-venv python3-pip
 
 ### 2. Create & Activate Virtual Environment
 ```bash
-cd /mnt/c/Users/SAKSHAM SINGRIWAL/Desktop/agentic_ds
+cd /mnt/c/Users/SAKSHAM SINGRIWAL/Desktop/apex-ds-enterprise-analytics
 python3.12 -m venv .venv
 source .venv/bin/activate
 ```
