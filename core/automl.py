@@ -1,12 +1,35 @@
-try:
-    from autogluon.tabular import TabularPredictor
-    _AUTOGLUON_AVAILABLE = True
-except Exception:
-    TabularPredictor = None
-    _AUTOGLUON_AVAILABLE = False
+"""
+AutoML wrapper around AutoGluon TabularPredictor.
+"""
+from __future__ import annotations
+
+import logging
+import tempfile
+import os
+from typing import Optional
 
 import pandas as pd
-from typing import Optional, Dict, Any
+
+logger = logging.getLogger("apex_ds.automl")
+
+_PROBLEM_TYPE_MAP = {
+    "binary_classification": "binary",
+    "multiclass_classification": "multiclass",
+    "classification": "multiclass",
+    "regression": "regression",
+    "ordinal_regression": "regression",
+    "survival_analysis": "regression",
+    "time_series_forecasting": "regression",
+    "anomaly_detection": "binary",
+    "multi_label_classification": "multiclass",
+    "recommendation": "regression",
+    "image_classification": "multiclass",
+    "text_classification": "multiclass",
+}
+
+
+def _map_problem_type(problem_type: str) -> str:
+    return _PROBLEM_TYPE_MAP.get(problem_type, "multiclass")
 
 
 def train_automl(
@@ -19,91 +42,51 @@ def train_automl(
     calibrate: bool = True,
     num_bag_folds: int = 5,
     num_stack_levels: int = 1,
-) -> TabularPredictor:
-    if problem_type == 'classification':
-        if df[target].nunique() == 2:
-            problem = 'binary'
-        else:
-            problem = 'multiclass'
-    else:
-        problem = 'regression'
-
-    if df is None:
-        raise ValueError('Input DataFrame is None. Please provide a valid dataset.')
-    if not isinstance(df, pd.DataFrame):
-        raise ValueError('Input must be a pandas DataFrame')
-    n_samples = int(df.shape[0])
-    if n_samples == 0:
-        raise ValueError('Input DataFrame is empty. Load a dataset with at least one row.')
-    if target not in df.columns:
-        raise ValueError(f"Target column '{target}' not found in DataFrame")
-    if df[target].dropna().shape[0] == 0:
-        raise ValueError('Target column contains only missing values.')
-
-    if not _AUTOGLUON_AVAILABLE:
-        raise RuntimeError('autogluon is not installed. Install with `pip install autogluon`')
-
-    # Pick a robust default metric tuned for generalization
-    if eval_metric is None:
-        if problem == 'regression':
-            eval_metric = 'root_mean_squared_error'
-        else:
-            eval_metric = 'roc_auc' if problem == 'binary' else 'log_loss'
-
-    train_data = df.sample(frac=1.0, random_state=42).reset_index(drop=True)
-
-    predictor = TabularPredictor(
-        label=target,
-        problem_type=problem,
-        eval_metric=eval_metric,
-        verbosity=0,
-    )
-
-    # Stronger regularization / robustness:
-    # - stacking (controlled levels/folds)
-    # - bagging with holdout (reduces over-reliance on train set)
-    # - calibration improves probability reliability
-    fit_args = {
-        'time_limit': max(time_limit, 60),
-        'calibrate': calibrate,
-        'num_bag_folds': min(num_bag_folds, max(2, n_samples // 200)),
-        'num_stack_levels': num_stack_levels,
-        'holdout_frac': 0.1,
-        'auto_stack': True,
-        'verbosity': 0,
-    }
-
-    predictor.fit(train_data, **fit_args)
-
-    # Persist lightweight diagnostics for UI / logging
-    diagnostics: Dict[str, Any] = {
-        'preset': preset,
-        'eval_metric': eval_metric,
-        'time_limit': int(time_limit),
-        'num_bag_folds': int(fit_args['num_bag_folds']),
-        'num_stack_levels': int(num_stack_levels),
-    }
-
+):
+    """Train AutoGluon predictor. Returns predictor or None on failure."""
     try:
-        leaderboard = predictor.leaderboard(silent=True)
-        best = leaderboard.iloc[0]
-        diagnostics['best_model'] = best['model']
-        diagnostics['best_score'] = float(best['score_val']) if 'score_val' in best else None
-        diagnostics['fit_time'] = float(best['fit_time']) if 'fit_time' in best else None
-    except Exception:
-        pass
+        from autogluon.tabular import TabularPredictor  # type: ignore[import]
 
-    # Attach diagnostics to the predictor so app.py can read them
+        ag_problem = _map_problem_type(problem_type)
+
+        if eval_metric is None:
+            if ag_problem in ("binary", "multiclass"):
+                eval_metric = "accuracy"
+            else:
+                eval_metric = "rmse"
+
+        save_path = os.path.join(tempfile.gettempdir(), "apex_automl_model")
+
+        predictor = TabularPredictor(
+            label=target,
+            problem_type=ag_problem,
+            eval_metric=eval_metric,
+            path=save_path,
+        ).fit(
+            df,
+            time_limit=time_limit,
+            presets=preset,
+            num_bag_folds=num_bag_folds if calibrate else 0,
+            num_stack_levels=num_stack_levels if calibrate else 0,
+        )
+        return predictor
+    except Exception as exc:
+        logger.error("AutoML training failed: %s", exc)
+        return None
+
+
+def get_feature_importance(predictor, df: pd.DataFrame) -> Optional[pd.DataFrame]:
+    """Return feature importance DataFrame sorted descending, or None."""
     try:
-        setattr(predictor, '_fit_diagnostics', diagnostics)
-    except Exception:
-        pass
-
-    return predictor
-
-
-def get_feature_importance(predictor, df: pd.DataFrame):
-    try:
-        return predictor.feature_importance(df)
-    except Exception:
+        fi = predictor.feature_importance(df)
+        if isinstance(fi, pd.DataFrame):
+            if "importance" in fi.columns:
+                return fi.sort_values("importance", ascending=False)
+            return fi
+        # Some versions return a Series
+        if isinstance(fi, pd.Series):
+            return fi.sort_values(ascending=False).rename("importance").to_frame()
+        return None
+    except Exception as exc:
+        logger.warning("Feature importance failed: %s", exc)
         return None

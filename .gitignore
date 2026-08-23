@@ -16,3 +16,5 @@ exports/
 models/
 AutogluonModels/
 *.bak
+autopilot_runs/
+batch_registry.json

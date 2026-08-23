@@ -1,73 +1,69 @@
+"""
+Goal-driven AutoML agent using Optuna to find optimal time_limit.
+"""
+from __future__ import annotations
+
+import logging
+from typing import Dict, Any
+
+import pandas as pd
 import optuna
-try:
-    from autogluon.tabular import TabularPredictor
-    _AUTOGLUON_AVAILABLE = True
-except Exception:
-    TabularPredictor = None
-    _AUTOGLUON_AVAILABLE = False
+
+logger = logging.getLogger("apex_ds.goal_agent")
+optuna.logging.set_verbosity(optuna.logging.WARNING)
 
 
-def run_goal_agent(df, target, problem_type, target_score, n_trials=8):
-    if problem_type == 'classification':
-        if df[target].nunique() == 2:
-            prob = 'binary'
-        else:
-            prob = 'multiclass'
-    else:
-        prob = 'regression'
+def run_goal_agent(
+    df: pd.DataFrame,
+    target: Any,
+    problem_type: Any,
+    target_score: float = 0.85,
+    n_trials: int = 8,
+) -> Dict[str, Any]:
+    """
+    Search for best AutoGluon time_limit that meets target_score.
+    Returns dict with best_score, goal_met, best_params.
+    """
+    from core.automl import train_automl
 
-    n_samples = int(df.shape[0])
-    num_bag_folds = max(2, min(5, n_samples // 100))
-    num_stack_levels = 2 if n_samples > 5000 else 1
+    best_score = 0.0
+    best_params: Dict[str, Any] = {}
 
-    if prob == 'binary':
-        eval_metric = 'roc_auc'
-    elif prob == 'multiclass':
-        eval_metric = 'accuracy'
-    else:
-        eval_metric = 'root_mean_squared_error'
+    def objective(trial: optuna.Trial) -> float:
+        nonlocal best_score, best_params
+        time_limit = trial.suggest_int("time_limit", 30, 180, step=30)
+        preset = trial.suggest_categorical("preset", ["medium_quality_faster_train", "good_quality_faster_train"])
 
-    def objective(trial):
-        time_limit = trial.suggest_int('time_limit', 30, 120)
-
-        if not _AUTOGLUON_AVAILABLE:
-            raise RuntimeError('autogluon not installed')
-
-        predictor = TabularPredictor(
-            label=target,
-            problem_type=prob,
-            eval_metric=eval_metric,
-            presets='medium_quality_faster_train'
+        predictor = train_automl(
+            df, str(target), str(problem_type),
+            time_limit=time_limit,
+            preset=str(preset),
+            calibrate=False,
         )
+        if predictor is None:
+            return 0.0
 
-        fit_kwargs = {
-            'train_data': df,
-            'time_limit': time_limit,
-            'verbosity': 0,
-            'num_bag_folds': num_bag_folds,
-            'num_stack_levels': num_stack_levels,
-        }
-        if prob in ('binary', 'multiclass'):
-            fit_kwargs['calibrate_pred_proba'] = True
+        try:
+            lb = predictor.leaderboard(silent=True)
+            if len(lb) == 0:
+                return 0.0
+            score = float(lb.iloc[0]["score_val"])
+        except Exception:
+            return 0.0
 
-        predictor.fit(**fit_kwargs)
+        # Optuna minimises; we want to maximise score
+        if score > best_score:
+            best_score = score
+            best_params = {"time_limit": time_limit, "preset": preset}
 
-        leaderboard = predictor.leaderboard(silent=True)
-        score = leaderboard.iloc[0]['score_val']
+        return -score  # negate for minimisation
 
-        if eval_metric == 'root_mean_squared_error':
-            return -score
-        else:
-            return score
-
-    study = optuna.create_study(direction='maximize')
+    study = optuna.create_study(direction="minimize")
     study.optimize(objective, n_trials=n_trials, show_progress_bar=False)
-    best_score = study.best_value
-    if eval_metric == 'root_mean_squared_error':
-        best_score = -best_score
-    goal_met = best_score >= target_score
+
     return {
-        'best_score': best_score,
-        'goal_met': goal_met,
-        'best_params': study.best_params,
+        "best_score": best_score,
+        "goal_met": best_score >= target_score,
+        "best_params": best_params,
+        "target_score": target_score,
     }

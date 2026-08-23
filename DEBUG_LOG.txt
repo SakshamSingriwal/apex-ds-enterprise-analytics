@@ -1,0 +1,85 @@
+# Bug Fixes Log - Session June 7, 2026
+
+## 1. Invalid AutoGluon kwargs fix in core/goal_agent.py
+- **Error description**: TypeError when calling TabularPredictor.fit() with invalid keyword arguments
+- **Root cause**: Using deprecated/presets parameter and invalid keyword arguments (calibrate_pred_proba) that are not accepted by AutoGluon 1.5.0+
+- **Fix applied**: Removed invalid kwargs, restructured fit() call to use positional arguments and valid parameters (holdout_frac, auto_stack, calibrate)
+- **File changed**: core/goal_agent.py
+- **Lines changed**: 36-51
+
+## 2. Streamlit use_container_width deprecation fixes (7 occurrences)
+- **Error description**: st.plotly_chart() calls using deprecated use_container_width parameter
+- **Root cause**: Streamlit 1.35.0 deprecated use_container_width in favor of width="stretch"
+- **Fix applied**: Changed use_container_width=True to width="stretch" in all 7 occurrences
+- **File changed**: app.py
+- **Lines changed**: 385, 428, 444, 458, 521, 610, 646
+
+## 3. pd.to_datetime risky call fix
+- **Error description**: datetime detection crashing on invalid date strings with errors='raise'
+- **Root cause**: pd.to_datetime() was called with errors='raise' which throws exception on unparseable dates
+- **Fix applied**: Changed to errors='coerce' and added check for converted.isna().all() to validate datetime columns
+- **File changed**: app.py
+- **Lines changed**: 307-310
+
+## 4. Deep Learning tab crash when torch unavailable
+- **Error description**: app crashed when torch not available because selectbox received empty list
+- **Root cause**: get_available_architectures() returns [] when torch unavailable, causing Streamlit selectbox error
+- **Fix applied**: Added fallback with `archs = get_available_architectures() or ["ANN"]` to ensure non-empty list
+- **File changed**: app.py
+- **Lines changed**: 474
+
+## 5. Missing RL tab addition
+- **Error description**: RL tab was missing from the application despite dependencies being added to requirements
+- **Root cause**: RL tab code was absent from the application
+- **Fix applied**: Added complete RL tab implementation with gymnasium/stable-baselines3 integration and proper error handling
+- **File changed**: app.py
+- **Lines changed**: 537-576
+
+## 6. AutoML diagnostics keys mismatch
+- **Error description**: Diagnostics display showing wrong/empty values due to key mismatches
+- **Root cause**: UI was requesting keys (preset, bag_folds, stack_levels) that didn't match actual diagnostic keys (eval_metric, final_score, best_iteration, etc.)
+- **Fix applied**: Updated st.json() call to use correct diagnostic keys that are actually set in core/automl.py
+- **File changed**: app.py
+- **Lines changed**: 351-358
+
+## 7. requirements.txt version bump
+- **Error description**: Missing gymnasium and stable-baselines3 packages; outdated autogluon version
+- **Root cause**: RL dependencies were not specified; autogluon pinned at old version
+- **Fix applied**: 
+  - Changed autogluon==1.1.1 to autogluon>=1.5.0
+  - Added gymnasium==0.29.1
+  - Added stable-baselines3==2.3.0
+- **File changed**: requirements.txt
+- **Lines changed**: 5, 29-30
+
+## 8. None.capitalize() guard
+- **Error description**: App crash when current_problem is None (rare edge case)
+- **Root cause**: Called .capitalize() directly on potentially None value
+- **Fix applied**: Changed to `(st.session_state.current_problem or "Unknown").capitalize()`
+- **File changed**: app.py
+- **Lines changed**: 269
+
+## 9. Unused import removals
+- **Error description**: Unused imports cluttering codebase
+- **Root cause**: Unnecessary import statements present
+- **Fix applied**: Removed unused torch imports from app.py (torch check now uses importlib.util.find_spec)
+- **File changed**: app.py
+- **Lines changed**: Imports section (lines 1-12)
+
+## 10. Unused torch import replaced with importlib.util.find_spec
+- **Error description**: Direct torch import at top level causing import errors when torch unavailable
+- **Root cause**: Unused torch import that wasn't being used for conditional tab creation
+- **Fix applied**: Replaced with `importlib.util.find_spec("torch")` check for conditional Deep Learning tab availability
+- **File changed**: app.py
+- **Lines changed**: 282-283
+
+## 11. Removed duplicate/erroneously indented RL block
+- **Error description**: Duplicate RL tab check with incorrect indentation in sidebar section
+- **Root cause**: Malformed code block left over from partial edit (try block not indented properly)
+- **Fix applied**: Removed duplicate RL check block (lines 253-257) since proper check exists later
+- **File changed**: app.py
+- **Lines changed**: Removed lines 253-257
+
+---
+**Total fixes count**: 11
+**Current status**: All fixes applied and tested. Application ready for deployment.
